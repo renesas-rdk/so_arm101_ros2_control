@@ -1,0 +1,31 @@
+# SO ARM101 Servo Calibration Configuration
+# This file contains essential calibrated servo parameters from LeRobot framework
+#
+# Parameter descriptions:
+# - range_min: Minimum allowed servo position in ticks (safety limit)
+# - range_max: Maximum allowed servo position in ticks (safety limit)
+
+calibration:
+  shoulder_pan:
+    range_min: 770
+    range_max: 3401
+
+  shoulder_lift:
+    range_min: 811
+    range_max: 3206
+
+  elbow_flex:
+    range_min: 954
+    range_max: 3146
+
+  wrist_flex:
+    range_min: 847
+    range_max: 3177
+
+  wrist_roll:
+    range_min: 145
+    range_max: 3805
+
+  gripper:
+    range_min: 1479
+    range_max: 2994

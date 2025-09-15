@@ -1,0 +1,7 @@
+<library path="so_arm101_ros2_control_hardware_interface">
+  <class name="so_arm101_ros2_control/SoArm101HardwareInterface" type="so_arm101_ros2_control::SoArm101HardwareInterface" base_class_type="hardware_interface::SystemInterface">
+    <description>
+      SO ARM101 6-DOF robotic arm hardware interface using STS3215 servo motors
+    </description>
+  </class>
+</library>

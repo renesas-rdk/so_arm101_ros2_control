@@ -1,0 +1,36 @@
+# Cartesian Motion Controller Configuration for SO ARM101
+# This controller provides Cartesian space motion control without force feedback
+
+so_arm101_cartesian_motion_controller:
+  ros__parameters:
+    # Robot kinematic configuration
+    end_effector_link: "tool0"     # End-effector frame
+    robot_base_link: "base_link"   # Robot base frame
+
+    # Controlled joints
+    joints:
+      - shoulder_pan
+      - shoulder_lift
+      - elbow_flex
+      - wrist_flex
+      - wrist_roll
+
+    # Interface specification
+    command_interfaces:
+      - position
+
+    # Solver configuration for inverse kinematics
+    solver:
+      error_scale: 1.0              # Overall error scaling factor
+      iterations: 20                # Max iterations per solve cycle
+      publish_state_feedback: true  # Publish controller state
+
+    # Cartesian PD gains for each degree of freedom
+    # Higher values = more responsive, lower values = smoother
+    pd_gains:
+      trans_x: {p: 15.0, d: 1.0}   # X translation gains
+      trans_y: {p: 15.0, d: 1.0}   # Y translation gains
+      trans_z: {p: 15.0, d: 1.0}   # Z translation gains
+      rot_x: {p: 8.0, d: 0.5}      # X rotation gains
+      rot_y: {p: 8.0, d: 0.5}      # Y rotation gains
+      rot_z: {p: 8.0, d: 0.5}      # Z rotation gains

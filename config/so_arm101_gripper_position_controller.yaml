@@ -1,0 +1,16 @@
+# Gripper Position Controller Configuration for SO ARM101 Gripper
+# This file configures the joint group position controller for the SO ARM101 gripper
+
+so_arm101_gripper_position_controller:
+  ros__parameters:
+    # Joint specification
+    joints:
+      - gripper
+
+    # Interface configuration
+    interface_name: position
+
+    # Command timeout (safety feature)
+    # If no command is received within this time, the controller will stop
+    # Set to 0.0 to disable timeout
+    command_timeout: 0.2  # seconds

@@ -1,0 +1,88 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!--
+    ROS 2 Control macro for SO-ARM101 robotic arm
+    This macro adds ros2_control tags to the robot description
+    Supports both real hardware and mock hardware configurations
+  -->
+
+  <xacro:macro name="so_arm101_ros2_control" params="
+    name:=so_arm101
+    use_mock_hardware:=false
+    serial_port:=/dev/ttyACM0
+    serial_baudrate:=1000000
+    enable_torque:=true
+    calibration_file:=''
+    prefix:=''
+    ">
+
+        <ros2_control name="${prefix}${name}" type="system" rw_rate="50">
+
+            <!-- Hardware interface plugin chosen conditionally -->
+            <hardware>
+                <xacro:if value="${use_mock_hardware}">
+                    <plugin>mock_components/GenericSystem</plugin>
+                    <param name="calculate_dynamics">true</param>
+                </xacro:if>
+                <xacro:unless value="${use_mock_hardware}">
+                    <plugin>so_arm101_ros2_control/SoArm101HardwareInterface</plugin>
+                    <param name="enable_torque">${enable_torque}</param>
+                    <param name="serial_port">${serial_port}</param>
+                    <param name="serial_baudrate">${serial_baudrate}</param>
+                    <param name="calibration_file">${calibration_file}</param>
+                </xacro:unless>
+            </hardware>
+
+            <!-- Joint definitions -->
+            <joint name="${prefix}shoulder_pan">
+                <command_interface name="position"/>
+                <state_interface name="position">
+                  <param name="initial_value">0.0</param>
+                </state_interface>
+                <state_interface name="velocity"/>
+            </joint>
+
+            <joint name="${prefix}shoulder_lift">
+                <command_interface name="position"/>
+                <state_interface name="position">
+                  <param name="initial_value">0.0</param>
+                </state_interface>
+                <state_interface name="velocity"/>
+            </joint>
+
+            <joint name="${prefix}elbow_flex">
+                <command_interface name="position"/>
+                <state_interface name="position">
+                  <param name="initial_value">0.0</param>
+                </state_interface>
+                <state_interface name="velocity"/>
+            </joint>
+
+            <joint name="${prefix}wrist_flex">
+                <command_interface name="position"/>
+                <state_interface name="position">
+                  <param name="initial_value">0.0</param>
+                </state_interface>
+                <state_interface name="velocity"/>
+            </joint>
+
+            <joint name="${prefix}wrist_roll">
+                <command_interface name="position"/>
+                <state_interface name="position">
+                  <param name="initial_value">0.0</param>
+                </state_interface>
+                <state_interface name="velocity"/>
+            </joint>
+
+            <joint name="${prefix}gripper">
+                <command_interface name="position"/>
+                <state_interface name="position">
+                  <param name="initial_value">0.0</param>
+                </state_interface>
+                <state_interface name="velocity"/>
+            </joint>
+
+        </ros2_control>
+    </xacro:macro>
+</robot>

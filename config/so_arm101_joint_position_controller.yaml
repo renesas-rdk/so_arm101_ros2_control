@@ -1,0 +1,20 @@
+# Joint Position Controller Configuration for SO ARM101
+# This controller provides direct position commands to individual joints
+
+so_arm101_joint_position_controller:
+  ros__parameters:
+    # Joint specification
+    joints:
+      - shoulder_pan   # Base rotation
+      - shoulder_lift  # Shoulder
+      - elbow_flex     # Elbow
+      - wrist_flex     # Wrist 1
+      - wrist_roll     # Wrist 2
+
+    # Interface configuration
+    interface_name: position
+
+    # Command timeout (safety feature)
+    # If no command is received within this time, the controller will stop
+    # Set to 0.0 to disable timeout
+    command_timeout: 0.2  # seconds
