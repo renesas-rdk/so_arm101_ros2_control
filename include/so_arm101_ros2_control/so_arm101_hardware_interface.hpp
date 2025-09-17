@@ -53,7 +53,8 @@ public:
   RCLCPP_SHARED_PTR_DEFINITIONS(SoArm101HardwareInterface)
 
   SO_ARM101_ROS2_CONTROL_PUBLIC
-  CallbackReturn on_init(const hardware_interface::HardwareInfo & info) override;
+  CallbackReturn on_init(
+    const hardware_interface::HardwareComponentInterfaceParams & params) override;
 
   SO_ARM101_ROS2_CONTROL_PUBLIC
   std::vector<hardware_interface::StateInterface> export_state_interfaces() override;
@@ -80,12 +81,18 @@ private:
   static constexpr size_t JOINT_COUNT = 6;
   static constexpr int SERVO_SPEED_DEFAULT = 4500;
   static constexpr int SERVO_ACCELERATION_DEFAULT = 255;
-  static constexpr int SERVO_POSITION_CENTER = 2048;
+  static constexpr int SERVO_POSITION_CENTER_DEFAULT = 2048;  // Default center when no calibration
   static constexpr int SERVO_POSITION_MAX = 4095;
 
   // Unit conversion methods
-  double servo_position_to_radians(int servo_position, size_t joint_index) const;
-  int radians_to_servo_position(double radians, size_t joint_index) const;
+  double convert_ticks_to_radians(int ticks, size_t joint_index) const;
+  int convert_radians_to_ticks(double radians, size_t joint_index) const;
+
+  // Calibration data helper methods
+  int get_center_position(size_t joint_index) const;
+  int get_min_position(size_t joint_index) const;
+  int get_max_position(size_t joint_index) const;
+  bool is_position_within_limits(int position, size_t joint_index) const;
 
   // Hardware setup and configuration
   bool setup_servo(uint8_t servo_id, size_t joint_index);
@@ -94,7 +101,6 @@ private:
 
   // Calibration methods
   bool load_joint_calibration(const std::string & calibration_file_path);
-  double normalize_position(const std::string & joint_name, int ticks) const;
 
   // Joint state data (ROS2 interface)
   std::vector<double> joint_positions_;
@@ -121,15 +127,12 @@ private:
   // Joint calibration data structure
   struct ServoCalibration
   {
-    int min_position;
-    int center_position;
-    int max_position;
-    double position_range;
+    bool has_calibration = false;  // Whether this joint has calibration data
+    int min_ticks;                 // Minimum safe position in raw servo ticks
+    int max_ticks;                 // Maximum safe position in raw servo ticks
+    int center_ticks;              // Center position in raw servo ticks - corresponds to 0 radians
   };
-  std::map<std::string, ServoCalibration> joint_calibrations_;
-
-  // Servo configuration per joint
-  std::vector<int> servo_rotation_directions_;
+  std::vector<ServoCalibration> joint_calibrations_;
 };
 
 }  // namespace so_arm101_ros2_control

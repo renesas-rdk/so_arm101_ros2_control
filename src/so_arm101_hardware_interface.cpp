@@ -34,9 +34,9 @@ namespace so_arm101_ros2_control
 {
 
 hardware_interface::CallbackReturn SoArm101HardwareInterface::on_init(
-  const hardware_interface::HardwareInfo & info)
+  const hardware_interface::HardwareComponentInterfaceParams & params)
 {
-  if (hardware_interface::SystemInterface::on_init(info) != CallbackReturn::SUCCESS) {
+  if (hardware_interface::SystemInterface::on_init(params) != CallbackReturn::SUCCESS) {
     return CallbackReturn::ERROR;
   }
 
@@ -52,8 +52,8 @@ hardware_interface::CallbackReturn SoArm101HardwareInterface::on_init(
   joint_position_commands_.resize(JOINT_COUNT, 0.0);
   joint_positions_prev_.resize(JOINT_COUNT, 0.0);
 
-  // Initialize servo configuration
-  servo_rotation_directions_.resize(JOINT_COUNT, 1);
+  // Initialize calibration vector
+  joint_calibrations_.resize(JOINT_COUNT);
 
   // Initialize hardware communication
   servo_driver_ = std::make_unique<SMS_STS>();
@@ -66,8 +66,10 @@ hardware_interface::CallbackReturn SoArm101HardwareInterface::on_init(
   }
 
   RCLCPP_INFO(
-    logger_, "Initialized SO ARM101 interface: port=%s, baud=%d, torque_enabled=%s",
-    serial_port_device_.c_str(), serial_baud_rate_, torque_enabled_on_start_ ? "true" : "false");
+    logger_,
+    "Initialized SO ARM101 interface: port=%s, baud=%d, torque_enabled=%s, calibration_file=%s",
+    serial_port_device_.c_str(), serial_baud_rate_, torque_enabled_on_start_ ? "true" : "false",
+    calibration_file_path_.empty() ? "none" : calibration_file_path_.c_str());
 
   return CallbackReturn::SUCCESS;
 }
@@ -117,6 +119,15 @@ hardware_interface::CallbackReturn SoArm101HardwareInterface::on_activate(
     return CallbackReturn::ERROR;
   }
 
+  hardware_is_connected_ = true;
+
+  // Load calibration data before servo initialization if provided
+  if (!calibration_file_path_.empty()) {
+    if (!load_joint_calibration(calibration_file_path_)) {
+      RCLCPP_WARN(logger_, "Failed to load calibration from: %s", calibration_file_path_.c_str());
+    }
+  }
+
   // Initialize all servo motors
   for (size_t i = 0; i < JOINT_COUNT; ++i) {
     const uint8_t servo_id = static_cast<uint8_t>(i + 1);
@@ -130,17 +141,8 @@ hardware_interface::CallbackReturn SoArm101HardwareInterface::on_activate(
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
 
-  hardware_is_connected_ = true;
-
   // Enable torque if configured
   configure_servo_torque(torque_enabled_on_start_);
-
-  // Load calibration data if provided
-  if (!calibration_file_path_.empty()) {
-    if (!load_joint_calibration(calibration_file_path_)) {
-      RCLCPP_WARN(logger_, "Failed to load calibration from: %s", calibration_file_path_.c_str());
-    }
-  }
 
   RCLCPP_INFO(logger_, "Hardware interface activated successfully");
   return CallbackReturn::SUCCESS;
@@ -178,7 +180,7 @@ hardware_interface::return_type SoArm101HardwareInterface::read(
 
     if (servo_driver_->FeedBack(servo_id) != -1) {
       const int servo_position = servo_driver_->ReadPos(servo_id);
-      joint_positions_[i] = servo_position_to_radians(servo_position, i);
+      joint_positions_[i] = convert_ticks_to_radians(servo_position, i);
     } else {
       static auto clock = rclcpp::Clock();
       RCLCPP_WARN_THROTTLE(logger_, clock, 1000, "Failed to read from servo %d", servo_id);
@@ -206,7 +208,16 @@ hardware_interface::return_type SoArm101HardwareInterface::write(
   // Send position commands to all servos
   for (size_t i = 0; i < JOINT_COUNT; ++i) {
     const uint8_t servo_id = static_cast<uint8_t>(i + 1);
-    const int servo_position = radians_to_servo_position(joint_position_commands_[i], i);
+    const int servo_position = convert_radians_to_ticks(joint_position_commands_[i], i);
+
+    // Validate position is within limits
+    if (!is_position_within_limits(servo_position, i)) {
+      static auto clock = rclcpp::Clock();
+      RCLCPP_WARN_THROTTLE(
+        logger_, clock, 1000,
+        "Position command for joint %zu (%.3f rad -> %d ticks) exceeds limits [%d, %d]", i,
+        joint_position_commands_[i], servo_position, get_min_position(i), get_max_position(i));
+    }
 
     if (!servo_driver_->RegWritePosEx(
           servo_id, servo_position, SERVO_SPEED_DEFAULT, SERVO_ACCELERATION_DEFAULT)) {
@@ -220,32 +231,71 @@ hardware_interface::return_type SoArm101HardwareInterface::write(
   return hardware_interface::return_type::OK;
 }
 
-// Convert between hardware-specific units and ROS standard units
-double SoArm101HardwareInterface::servo_position_to_radians(
-  int servo_position, size_t joint_index) const
+// Simplified conversion methods using joint index
+double SoArm101HardwareInterface::convert_ticks_to_radians(int ticks, size_t joint_index) const
 {
-  // Convert servo position (0-4095) to radians (-π to π)
-  const double normalized = (static_cast<double>(servo_position) - SERVO_POSITION_CENTER) /
-                            static_cast<double>(SERVO_POSITION_CENTER);  // -1 to 1
-  return normalized * M_PI * servo_rotation_directions_[joint_index];
+  const int center_pos = get_center_position(joint_index);
+  const int offset_from_center = ticks - center_pos;
+
+  // Convert to radians: 4096 ticks = 2π radians
+  // So 1 tick = 2π/4096 radians
+  return (static_cast<double>(offset_from_center) * 2.0 * M_PI) / 4096.0;
 }
 
-int SoArm101HardwareInterface::radians_to_servo_position(double radians, size_t joint_index) const
+int SoArm101HardwareInterface::convert_radians_to_ticks(double radians, size_t joint_index) const
 {
-  // Convert radians (-π to π) to servo position (0-4095)
-  const double normalized = (radians * servo_rotation_directions_[joint_index]) / M_PI;  // -1 to 1
-  const int servo_position =
-    static_cast<int>(normalized * SERVO_POSITION_CENTER + SERVO_POSITION_CENTER);
-  return std::max(0, std::min(SERVO_POSITION_MAX, servo_position));
+  const int center_pos = get_center_position(joint_index);
+
+  // Convert radians to ticks: 4096 ticks = 2π radians
+  // So 1 radian = 4096/(2π) ticks
+  const int offset_from_center = static_cast<int>((radians * 4096.0) / (2.0 * M_PI));
+  const int ticks = center_pos + offset_from_center;
+
+  // Clamp to valid range
+  return std::max(get_min_position(joint_index), std::min(get_max_position(joint_index), ticks));
+}
+
+// Helper methods for calibration data access
+int SoArm101HardwareInterface::get_center_position(size_t joint_index) const
+{
+  if (
+    joint_index < joint_calibrations_.size() && joint_calibrations_[joint_index].has_calibration) {
+    return joint_calibrations_[joint_index].center_ticks;
+  }
+  return SERVO_POSITION_CENTER_DEFAULT;
+}
+
+int SoArm101HardwareInterface::get_min_position(size_t joint_index) const
+{
+  if (
+    joint_index < joint_calibrations_.size() && joint_calibrations_[joint_index].has_calibration) {
+    return joint_calibrations_[joint_index].min_ticks;
+  }
+  return 0;
+}
+
+int SoArm101HardwareInterface::get_max_position(size_t joint_index) const
+{
+  if (
+    joint_index < joint_calibrations_.size() && joint_calibrations_[joint_index].has_calibration) {
+    return joint_calibrations_[joint_index].max_ticks;
+  }
+  return SERVO_POSITION_MAX;
+}
+
+bool SoArm101HardwareInterface::is_position_within_limits(int position, size_t joint_index) const
+{
+  return position >= get_min_position(joint_index) && position <= get_max_position(joint_index);
 }
 
 bool SoArm101HardwareInterface::setup_servo(uint8_t servo_id, size_t joint_index)
 {
+  const std::string & joint_name = info_.joints[joint_index].name;
+
   // Check servo communication
   if (servo_driver_->Ping(servo_id) == -1) {
     RCLCPP_ERROR(
-      logger_, "Servo %d not responding during setup (joint '%s')", servo_id,
-      info_.joints[joint_index].name.c_str());
+      logger_, "Servo %d not responding during setup (joint '%s')", servo_id, joint_name.c_str());
     return false;
   }
 
@@ -253,21 +303,31 @@ bool SoArm101HardwareInterface::setup_servo(uint8_t servo_id, size_t joint_index
   if (!servo_driver_->Mode(servo_id, 0)) {
     RCLCPP_ERROR(
       logger_, "Failed to set position control mode for servo %d (joint '%s')", servo_id,
-      info_.joints[joint_index].name.c_str());
+      joint_name.c_str());
     return false;
   }
 
   // Read current position and initialize command
   if (servo_driver_->FeedBack(servo_id) != -1) {
     const int current_position = servo_driver_->ReadPos(servo_id);
+
     if (current_position >= 0 && current_position <= SERVO_POSITION_MAX) {
-      joint_positions_[joint_index] = servo_position_to_radians(current_position, joint_index);
+      // Convert current position to radians
+      joint_positions_[joint_index] = convert_ticks_to_radians(current_position, joint_index);
       joint_position_commands_[joint_index] = joint_positions_[joint_index];
       joint_positions_prev_[joint_index] = joint_positions_[joint_index];
 
+      // Check if position is within calibrated limits
+      if (!is_position_within_limits(current_position, joint_index)) {
+        RCLCPP_WARN(
+          logger_, "Servo %d (%s) current position %d is outside calibrated limits [%d, %d]",
+          servo_id, joint_name.c_str(), current_position, get_min_position(joint_index),
+          get_max_position(joint_index));
+      }
+
       RCLCPP_INFO(
         logger_, "Servo %d (%s) initialized at position %d (%.3f rad)", servo_id,
-        info_.joints[joint_index].name.c_str(), current_position, joint_positions_[joint_index]);
+        joint_name.c_str(), current_position, joint_positions_[joint_index]);
     } else {
       RCLCPP_WARN(
         logger_, "Servo %d returned invalid position %d, using center position", servo_id,
@@ -370,42 +430,46 @@ bool SoArm101HardwareInterface::load_joint_calibration(const std::string & calib
       return false;
     }
 
+    size_t calibration_count = 0;
     for (const auto & joint_config : config["calibration"]) {
       const std::string joint_name = joint_config.first.as<std::string>();
+      const YAML::Node & joint_data = joint_config.second;
 
-      ServoCalibration calibration;
-      calibration.min_position = joint_config.second["min_ticks"].as<int>();
-      calibration.center_position = joint_config.second["center_ticks"].as<int>();
-      calibration.max_position = joint_config.second["max_ticks"].as<int>();
-      calibration.position_range = calibration.max_position - calibration.min_position;
+      // Find the joint index by name
+      size_t joint_index = JOINT_COUNT;  // Invalid index initially
+      for (size_t i = 0; i < JOINT_COUNT; ++i) {
+        if (info_.joints[i].name == joint_name) {
+          joint_index = i;
+          break;
+        }
+      }
 
-      joint_calibrations_[joint_name] = calibration;
+      if (joint_index >= JOINT_COUNT) {
+        RCLCPP_WARN(logger_, "Calibration for unknown joint '%s' ignored", joint_name.c_str());
+        continue;
+      }
+
+      // Set calibration data for this joint index
+      joint_calibrations_[joint_index].has_calibration = true;
+      joint_calibrations_[joint_index].min_ticks = joint_data["min_ticks"].as<int>();
+      joint_calibrations_[joint_index].max_ticks = joint_data["max_ticks"].as<int>();
+      joint_calibrations_[joint_index].center_ticks = joint_data["center_ticks"].as<int>();
 
       RCLCPP_INFO(
-        logger_, "Loaded calibration for joint '%s': [%d, %d, %d]", joint_name.c_str(),
-        calibration.min_position, calibration.center_position, calibration.max_position);
+        logger_, "Loaded calibration for joint %zu ('%s'): min=%d, center=%d, max=%d", joint_index,
+        joint_name.c_str(), joint_calibrations_[joint_index].min_ticks,
+        joint_calibrations_[joint_index].center_ticks, joint_calibrations_[joint_index].max_ticks);
+
+      calibration_count++;
     }
 
+    RCLCPP_INFO(logger_, "Successfully loaded calibration for %zu joints", calibration_count);
     return true;
   } catch (const std::exception & e) {
     RCLCPP_ERROR(
       logger_, "Failed to load calibration from '%s': %s", calibration_file_path.c_str(), e.what());
     return false;
   }
-}
-
-double SoArm101HardwareInterface::normalize_position(
-  const std::string & joint_name, int ticks) const
-{
-  auto it = joint_calibrations_.find(joint_name);
-  if (it != joint_calibrations_.end()) {
-    const auto & calibration = it->second;
-    const double normalized = (static_cast<double>(ticks) - calibration.center_position) /
-                              (calibration.position_range / 2.0);
-    return std::max(-1.0, std::min(1.0, normalized)) * M_PI;
-  }
-  // Fallback to default conversion if no calibration found
-  return servo_position_to_radians(ticks, 0);
 }
 
 }  // namespace so_arm101_ros2_control

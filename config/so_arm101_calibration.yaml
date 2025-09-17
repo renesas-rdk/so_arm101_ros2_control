@@ -2,30 +2,37 @@
 # This file contains essential calibrated servo parameters from LeRobot framework
 #
 # Parameter descriptions:
-# - range_min: Minimum allowed servo position in ticks (safety limit)
-# - range_max: Maximum allowed servo position in ticks (safety limit)
+# - min_ticks: Minimum allowed servo position in ticks (safety limit)
+# - max_ticks: Maximum allowed servo position in ticks (safety limit)
+# - center_ticks: Center position calculated as midpoint between min and max
 
 calibration:
   shoulder_pan:
-    range_min: 770
-    range_max: 3401
+    min_ticks: 770
+    max_ticks: 3401
+    center_ticks: 2085
 
   shoulder_lift:
-    range_min: 811
-    range_max: 3206
+    min_ticks: 811
+    max_ticks: 3206
+    center_ticks: 2008
 
   elbow_flex:
-    range_min: 954
-    range_max: 3146
+    min_ticks: 954
+    max_ticks: 3146
+    center_ticks: 2150
 
   wrist_flex:
-    range_min: 847
-    range_max: 3177
+    min_ticks: 847
+    max_ticks: 3177
+    center_ticks: 2012
 
   wrist_roll:
-    range_min: 145
-    range_max: 3805
+    min_ticks: 145
+    max_ticks: 3805
+    center_ticks: 1975
 
   gripper:
-    range_min: 1479
-    range_max: 2994
+    min_ticks: 1479
+    max_ticks: 2994
+    center_ticks: 1600
