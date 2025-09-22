@@ -52,6 +52,10 @@ hardware_interface::CallbackReturn SoArm101HardwareInterface::on_init(
   joint_position_commands_.resize(JOINT_COUNT, 0.0);
   joint_positions_prev_.resize(JOINT_COUNT, 0.0);
 
+  // Initialize GPIO state for torque enable control
+  arm_torque_enable_state_ = 0.0;
+  arm_torque_enable_command_ = 0.0;
+
   // Initialize calibration vector
   joint_calibrations_.resize(JOINT_COUNT);
 
@@ -90,6 +94,10 @@ std::vector<hardware_interface::StateInterface> SoArm101HardwareInterface::expor
         info_.joints[i].name, hardware_interface::HW_IF_VELOCITY, &joint_velocities_[i]));
   }
 
+  // Add GPIO state interface for arm administrative control
+  state_interfaces.emplace_back(
+    hardware_interface::StateInterface("arm_admin", "enable_torque", &arm_torque_enable_state_));
+
   return state_interfaces;
 }
 
@@ -103,6 +111,11 @@ SoArm101HardwareInterface::export_command_interfaces()
       hardware_interface::CommandInterface(
         info_.joints[i].name, hardware_interface::HW_IF_POSITION, &joint_position_commands_[i]));
   }
+
+  // Add GPIO command interface for arm administrative control
+  command_interfaces.emplace_back(
+    hardware_interface::CommandInterface(
+      "arm_admin", "enable_torque", &arm_torque_enable_command_));
 
   return command_interfaces;
 }
@@ -143,6 +156,10 @@ hardware_interface::CallbackReturn SoArm101HardwareInterface::on_activate(
 
   // Enable torque if configured
   configure_servo_torque(torque_enabled_on_start_);
+
+  // Update GPIO state to reflect initial torque setting
+  arm_torque_enable_state_ = torque_enabled_on_start_ ? 1.0 : 0.0;
+  arm_torque_enable_command_ = arm_torque_enable_state_;
 
   RCLCPP_INFO(logger_, "Hardware interface activated successfully");
   return CallbackReturn::SUCCESS;
@@ -201,7 +218,20 @@ hardware_interface::return_type SoArm101HardwareInterface::read(
 hardware_interface::return_type SoArm101HardwareInterface::write(
   const rclcpp::Time & /*time*/, const rclcpp::Duration & /*period*/)
 {
-  if (!hardware_is_connected_ || !torque_enabled_) {
+  if (!hardware_is_connected_) {
+    return hardware_interface::return_type::OK;
+  }
+
+  // Handle GPIO command for arm administrative control
+  if (std::abs(arm_torque_enable_command_ - arm_torque_enable_state_) > 0.5) {
+    bool enable_torque = arm_torque_enable_command_ > 0.5;
+    configure_servo_torque(enable_torque);
+    arm_torque_enable_state_ = enable_torque ? 1.0 : 0.0;
+    RCLCPP_INFO(
+      logger_, "Arm torque %s via administrative control", enable_torque ? "enabled" : "disabled");
+  }
+
+  if (!torque_enabled_) {
     return hardware_interface::return_type::OK;
   }
 
@@ -355,12 +385,6 @@ void SoArm101HardwareInterface::configure_servo_torque(bool enable)
 
   for (size_t i = 0; i < JOINT_COUNT; ++i) {
     const uint8_t servo_id = static_cast<uint8_t>(i + 1);
-    if (enable) {
-      servo_driver_->Mode(servo_id, 0);  // Ensure position mode when enabling torque
-    } else {
-      servo_driver_->Mode(servo_id, 2);  // Ensure Idle mode when disabling torque
-    }
-    std::this_thread::sleep_for(std::chrono::milliseconds(10));
     servo_driver_->EnableTorque(servo_id, enable ? 1 : 0);
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }

@@ -108,6 +108,10 @@ private:
   std::vector<double> joint_position_commands_;
   std::vector<double> joint_positions_prev_;  // For velocity calculation
 
+  // GPIO interface for arm administrative control
+  double arm_torque_enable_state_;
+  double arm_torque_enable_command_;
+
   // Hardware communication
   std::unique_ptr<SMS_STS> servo_driver_;
 

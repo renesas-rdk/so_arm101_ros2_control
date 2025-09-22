@@ -83,6 +83,14 @@
                 <state_interface name="velocity"/>
             </joint>
 
+            <!-- GPIO interface for arm administrative control -->
+            <gpio name="${prefix}arm_admin">
+                <command_interface name="enable_torque"/>
+                <state_interface name="enable_torque">
+                  <param name="initial_value">0.0</param>
+                </state_interface>
+            </gpio>
+
         </ros2_control>
     </xacro:macro>
 </robot>

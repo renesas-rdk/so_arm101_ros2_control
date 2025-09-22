@@ -1,0 +1,19 @@
+# GPIO Controller Configuration for SO ARM101
+# This controller manages the arm administrative control (torque enable/disable functionality)
+
+so_arm101_gpio_controller:
+  ros__parameters:
+    # GPIO interface configuration for arm administrative control
+    gpios:
+      - arm_admin
+
+    # Interface types for each GPIO
+    command_interfaces:
+      arm_admin:
+        - interfaces:
+          - enable_torque
+
+    state_interfaces:
+      arm_admin:
+        - interfaces:
+          - enable_torque

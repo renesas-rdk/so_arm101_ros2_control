@@ -16,6 +16,7 @@ The `SoArm101HardwareInterface` class implements the `hardware_interface::System
 ### Features
 
 - **Position Control**: Joint position command and state interfaces
+- **Arm Administrative Control**: Torque enable/disable via GpioCommandController
 - **Calibration Support**: Load calibration data from YAML files
 - **Real-time Communication**: Direct serial communication with servo motors
 
@@ -25,12 +26,15 @@ The package is configured to work with:
 
 - **Joint Trajectory Controller**: For coordinated arm movement (5 DOF arm joints)
 - **Joint Group Position Controller**: For gripper control (1 DOF gripper joint)
+- **GPIO Command Controller**: For arm administrative control (torque enable/disable)
 
 ## Configuration Files
 
-### Controllers (`so_arm101_controllers.yaml`)
-- `so_arm101_arm_controller`: JointTrajectoryController for arm joints
-- `so_arm101_gripper_controller`: JointGroupPositionController for gripper
+### Controllers (`controller_manager.yaml`)
+- `so_arm101_joint_trajectory_controller`: JointTrajectoryController for arm joints
+- `so_arm101_joint_position_controller`: JointGroupPositionController for direct position control
+- `so_arm101_gripper_position_controller`: JointGroupPositionController for gripper
+- `so_arm101_gpio_controller`: GpioCommandController for arm administrative control
 - `joint_state_broadcaster`: Joint state publisher
 
 ### Initial Positions (`initial_positions.yaml`)
